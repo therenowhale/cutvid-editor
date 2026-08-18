@@ -1,0 +1,16 @@
+# Generated render assets and local application state
+output/
+tmp/
+.cache/
+.DS_Store
+*.log
+
+# Project-agent working context (keep only durable docs under version control)
+.codex/*.local.*
+
+# Build products
+.gradle/
+**/build/
+
+# Render job artifacts
+*.render-job.json
