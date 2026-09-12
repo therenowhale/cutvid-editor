@@ -196,7 +196,9 @@ bool render(const std::string& referencePath, const std::string& backgroundPath,
     while (reference.read(frame)) {
         if (!background.read(back)) { background.set(cv::CAP_PROP_POS_FRAMES, 0); if (!background.read(back)) { error = "Could not loop background video."; return false; } }
         cv::resize(frame, frame, {width, height}); if (back.size() != frame.size()) cv::resize(back, back, frame.size());
-        const cv::Size modelSize = isModNet ? cv::Size(512, 512) : cv::Size(320, 320);
+        // Portrait matte quality takes priority over throughput. Preserve the 9:16 source
+        // geometry at a higher MODNet resolution instead of squeezing it into a square.
+        const cv::Size modelSize = isModNet ? cv::Size(576, 1024) : cv::Size(320, 320);
         cv::Mat small; cv::resize(frame, small, modelSize);
         cv::Mat blob = isModNet
             ? cv::dnn::blobFromImage(small, 1.0 / 127.5, modelSize, cv::Scalar(127.5, 127.5, 127.5), true, false)
