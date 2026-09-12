@@ -240,11 +240,16 @@ bool render(const std::string& referencePath, const std::string& backgroundPath,
         }
         if (best < 0) { previousBinary.release(); hasTracking = false; writer.write(back); continue; }
         cv::Mat currentMask; cv::compare(labels, best, currentMask, cv::CMP_EQ);
-        // Blend only the chosen person mask. This keeps a moving subject responsive while
-        // eliminating single-frame segmentation noise.
+        // Preserve fast motion (hands/fingers) while rejecting weak, newly appearing
+        // background: an ordinary pixel must be close to the prior silhouette, whereas a
+        // high-confidence MODNet pixel can join immediately.
         if (!previousBinary.empty() && previousBinary.size() == currentMask.size()) {
-            cv::Mat smoothed; cv::addWeighted(currentMask, 0.82, previousBinary, 0.18, 0.0, smoothed);
-            cv::threshold(smoothed, currentMask, 160, 255, cv::THRESH_BINARY);
+            cv::Mat expandedPrevious, continued, highConfidence;
+            cv::dilate(previousBinary, expandedPrevious, cv::getStructuringElement(cv::MORPH_ELLIPSE, {15,15}));
+            cv::bitwise_and(currentMask, expandedPrevious, continued);
+            cv::threshold(mask, highConfidence, isModNet ? 215 : 210, 255, cv::THRESH_BINARY);
+            cv::bitwise_and(highConfidence, currentMask, highConfidence);
+            cv::bitwise_or(continued, highConfidence, currentMask);
         }
         previousBinary = currentMask;
         cv::Rect detected(stats.at<int>(best, cv::CC_STAT_LEFT) - 12, stats.at<int>(best, cv::CC_STAT_TOP) - 12, stats.at<int>(best, cv::CC_STAT_WIDTH) + 24, stats.at<int>(best, cv::CC_STAT_HEIGHT) + 24);
