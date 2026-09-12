@@ -18,6 +18,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -57,6 +59,21 @@ private data class VideoFile(val file: File) {
     val label: String get() = file.name
 }
 
+private data class RenderSettings(
+    val outlinePixels: String = "12",
+    val scalePercent: String = "46",
+    val horizontalPercent: String = "2",
+    val bottomPercent: String = "0",
+    val outlineColor: String = "#FFFFFF",
+    val exportDirectory: File? = null,
+)
+
+private data class RenderProgress(
+    val message: String,
+    val percent: Int? = null,
+    val isRunning: Boolean = false,
+)
+
 fun main() = application {
     Window(
         title = "Jamal — Video Cutout",
@@ -67,6 +84,8 @@ fun main() = application {
         var referenceVideo by remember { mutableStateOf<VideoFile?>(null) }
         var backgroundVideo by remember { mutableStateOf<VideoFile?>(null) }
         var feedback by remember { mutableStateOf<String?>(null) }
+        var renderProgress by remember { mutableStateOf<RenderProgress?>(null) }
+        var settings by remember { mutableStateOf(RenderSettings()) }
 
         WindowDropHandler(
             window = window,
@@ -92,6 +111,9 @@ fun main() = application {
             referenceVideo = referenceVideo,
             backgroundVideo = backgroundVideo,
             feedback = feedback,
+            renderProgress = renderProgress,
+            settings = settings,
+            onSettingsChange = { settings = it },
             onChooseReference = {
                 chooseVideo(window)?.let { file ->
                     if (file.isSupportedVideo()) referenceVideo = VideoFile(file)
@@ -108,7 +130,8 @@ fun main() = application {
                 launchRenderEngine(
                     reference = requireNotNull(referenceVideo).file,
                     background = requireNotNull(backgroundVideo).file,
-                    onStatus = { message -> feedback = message },
+                    settings = settings,
+                    onStatus = { progress -> renderProgress = progress },
                 )
             },
         )
@@ -120,6 +143,9 @@ private fun App(
     referenceVideo: VideoFile?,
     backgroundVideo: VideoFile?,
     feedback: String?,
+    renderProgress: RenderProgress?,
+    settings: RenderSettings,
+    onSettingsChange: (RenderSettings) -> Unit,
     onChooseReference: () -> Unit,
     onChooseBackground: () -> Unit,
     onPrepareRender: () -> Unit,
@@ -152,6 +178,7 @@ private fun App(
                     selected = referenceVideo,
                     onChoose = onChooseReference,
                 )
+                RenderSettingsCard(settings, onSettingsChange)
                 VideoInputCard(
                     title = "Background video",
                     description = "The video behind the outlined cutout.",
@@ -162,22 +189,70 @@ private fun App(
                 if (feedback != null) {
                     Text(feedback, color = Color(0xFF9CC8FF), fontSize = 14.sp)
                 }
+                if (renderProgress != null) {
+                    RenderProgressCard(renderProgress)
+                }
 
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = onPrepareRender,
-                    enabled = referenceVideo != null && backgroundVideo != null,
+                    enabled = referenceVideo != null && backgroundVideo != null && renderProgress?.isRunning != true,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF3D7EFF),
                         disabledContainerColor = Color(0xFF2A2C31),
                     ),
                 ) {
-                    Text("Prepare render", fontWeight = FontWeight.SemiBold)
+                    Text(if (renderProgress?.isRunning == true) "Rendering…" else "Prepare render", fontWeight = FontWeight.SemiBold)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun RenderProgressCard(progress: RenderProgress) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Обработка", color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(progress.percent?.let { "$it%" } ?: "…", color = Color(0xFF9CC8FF), fontWeight = FontWeight.Bold)
+        }
+        LinearProgressIndicator(
+            progress = { (progress.percent ?: 0).coerceIn(0, 100) / 100f },
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFF3D7EFF),
+            trackColor = Color(0xFF2A2C31),
+        )
+        Text(progress.message, color = Color(0xFF9CC8FF), fontSize = 14.sp)
+    }
+}
+
+@Composable
+private fun RenderSettingsCard(settings: RenderSettings, onChange: (RenderSettings) -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        modifier = Modifier.fillMaxWidth().background(Color(0xFF1A1C21), shape)
+            .border(1.dp, Color(0xFF343842), shape).padding(22.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Composition", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        Text("Position and scale are percentages of the output frame. The reference video's audio is retained.", color = Color(0xFF9A9EAA), fontSize = 12.sp)
+        SettingsField("Outline (pixels)", settings.outlinePixels) { onChange(settings.copy(outlinePixels = it)) }
+        SettingsField("Person scale (% of frame height)", settings.scalePercent) { onChange(settings.copy(scalePercent = it)) }
+        SettingsField("Left margin (% of frame width)", settings.horizontalPercent) { onChange(settings.copy(horizontalPercent = it)) }
+        SettingsField("Bottom margin (% of frame height)", settings.bottomPercent) { onChange(settings.copy(bottomPercent = it)) }
+        SettingsField("Outline colour (#RRGGBB)", settings.outlineColor) { onChange(settings.copy(outlineColor = it)) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Export folder: ${settings.exportDirectory?.absolutePath ?: "~/.jamal/exports"}", modifier = Modifier.weight(1f), color = Color(0xFFE8EAF0), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+            Spacer(Modifier.width(12.dp))
+            Button(onClick = { chooseDirectory()?.let { onChange(settings.copy(exportDirectory = it)) } }) { Text("Choose folder") }
+        }
+    }
+}
+
+@Composable
+private fun SettingsField(label: String, value: String, onValueChange: (String) -> Unit) {
+    OutlinedTextField(value = value, onValueChange = onValueChange, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
 }
 
 @Composable
@@ -266,17 +341,31 @@ private fun chooseVideo(parent: Frame): File? {
     return File(directory, name)
 }
 
+private fun chooseDirectory(): File? {
+    val previous = System.getProperty("apple.awt.fileDialogForDirectories")
+    System.setProperty("apple.awt.fileDialogForDirectories", "true")
+    return try {
+        val dialog = FileDialog(null as Frame?, "Choose export folder", FileDialog.LOAD)
+        dialog.isVisible = true
+        val directory = dialog.directory ?: return null
+        val name = dialog.file
+        File(directory, name ?: "")
+    } finally {
+        if (previous == null) System.clearProperty("apple.awt.fileDialogForDirectories") else System.setProperty("apple.awt.fileDialogForDirectories", previous)
+    }
+}
+
 private fun File.isSupportedVideo(): Boolean = extension.lowercase() in videoExtensions
 
-private fun launchRenderEngine(reference: File, background: File, onStatus: (String) -> Unit) {
+private fun launchRenderEngine(reference: File, background: File, settings: RenderSettings, onStatus: (RenderProgress) -> Unit) {
     val engine = resolveEngineExecutable()
     if (engine == null) {
-        onStatus("C++ engine was not found. Build render-engine, then restart the app.")
+        onStatus(RenderProgress("C++ engine was not found. Build render-engine, then restart the app."))
         return
     }
 
-    val jobFile = writeRenderJob(reference, background)
-    onStatus("Starting C++ engine…")
+    val jobFile = writeRenderJob(reference, background, settings)
+    onStatus(RenderProgress("Starting C++ engine…", 0, true))
     Thread {
         try {
             val process = ProcessBuilder(engine.absolutePath, jobFile.toString())
@@ -284,15 +373,15 @@ private fun launchRenderEngine(reference: File, background: File, onStatus: (Str
                 .start()
             process.inputStream.bufferedReader().useLines { lines ->
                 lines.forEach { event ->
-                    SwingUtilities.invokeLater { onStatus(engineMessage(event)) }
+                    SwingUtilities.invokeLater { onStatus(engineProgress(event)) }
                 }
             }
             val exitCode = process.waitFor()
             if (exitCode != 0) {
-                SwingUtilities.invokeLater { onStatus("C++ engine stopped with code $exitCode.") }
+                SwingUtilities.invokeLater { onStatus(RenderProgress("C++ engine stopped with code $exitCode.")) }
             }
         } catch (error: Exception) {
-            SwingUtilities.invokeLater { onStatus("Could not start C++ engine: ${error.message}") }
+            SwingUtilities.invokeLater { onStatus(RenderProgress("Could not start C++ engine: ${error.message}")) }
         }
     }.apply {
         isDaemon = true
@@ -305,24 +394,43 @@ private fun resolveEngineExecutable(): File? {
     val launchDirectory = File(System.getProperty("user.dir")).canonicalFile
     val candidates = buildList {
         if (override != null) add(override)
+        System.getProperty("compose.application.resources.dir")?.let { resources ->
+            add(File(resources, "common/jamal-render-engine"))
+            add(File(resources, "jamal-render-engine"))
+        }
         var directory: File? = launchDirectory
         repeat(4) {
             directory?.let { add(File(it, "render-engine/build/jamal-render-engine")) }
             directory = directory?.parentFile
         }
     }
-    return candidates.firstOrNull(File::canExecute)
+    return candidates.firstOrNull { candidate -> candidate.setExecutable(true) && candidate.canExecute() }
 }
 
-private fun writeRenderJob(reference: File, background: File): Path {
+private fun writeRenderJob(reference: File, background: File, settings: RenderSettings): Path {
     val jobsDirectory = Path.of(System.getProperty("user.home"), ".jamal", "jobs")
+    val exportsDirectory = (settings.exportDirectory?.toPath() ?: Path.of(System.getProperty("user.home"), ".jamal", "exports")).toAbsolutePath()
     Files.createDirectories(jobsDirectory)
+    Files.createDirectories(exportsDirectory)
     val jobFile = Files.createTempFile(jobsDirectory, "render-", ".render-job.json")
+    val output = exportsDirectory.resolve("jamal-${System.currentTimeMillis()}.mp4")
+    val packagedResources = System.getProperty("compose.application.resources.dir")?.let(::File)
+    val packagedModel = listOfNotNull(packagedResources?.resolve("common/modnet_photographic.onnx"), packagedResources?.resolve("modnet_photographic.onnx"))
+        .firstOrNull(File::isFile)
+    val developmentModel = File(System.getProperty("user.dir"), "models/modnet_photographic.onnx").takeIf(File::isFile)
+    val model = packagedModel ?: developmentModel
     val json = """
         {
           "version": 1,
           "referenceVideo": "${reference.absolutePath.toJsonString()}",
-          "backgroundVideo": "${background.absolutePath.toJsonString()}"
+          "backgroundVideo": "${background.absolutePath.toJsonString()}",
+          "outputVideo": "${output.toString().toJsonString()}",
+          "modelPath": "${model?.absolutePath?.toJsonString().orEmpty()}",
+          "outlinePixels": "${settings.outlinePixels.toJsonString()}",
+          "scalePercent": "${settings.scalePercent.toJsonString()}",
+          "horizontalPercent": "${settings.horizontalPercent.toJsonString()}",
+          "bottomPercent": "${settings.bottomPercent.toJsonString()}",
+          "outlineColor": "${settings.outlineColor.toJsonString()}"
         }
     """.trimIndent()
     Files.writeString(jobFile, json, StandardCharsets.UTF_8)
@@ -332,7 +440,9 @@ private fun writeRenderJob(reference: File, background: File): Path {
 private fun String.toJsonString(): String =
     replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
 
-private fun engineMessage(event: String): String {
+private fun engineProgress(event: String): RenderProgress {
     val message = Regex("\\\"message\\\"\\s*:\\s*\\\"([^\\\"]*)").find(event)?.groupValues?.get(1)
-    return message ?: event
+    val percent = Regex("\\\"percent\\\"\\s*:\\s*(\\d+)").find(event)?.groupValues?.get(1)?.toIntOrNull()
+    val type = Regex("\\\"type\\\"\\s*:\\s*\\\"([^\\\"]*)").find(event)?.groupValues?.get(1)
+    return RenderProgress(message ?: event, percent, type == "progress")
 }

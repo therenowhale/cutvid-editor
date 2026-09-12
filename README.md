@@ -11,12 +11,24 @@ The Kotlin/Compose desktop UI provides two video inputs:
 
 Each input can be selected through the system file picker. Drag one or two supported video files onto the app window to fill Reference, then Background.
 
-`Prepare render` is intentionally a placeholder until the C++ render engine is added. The engine contract is documented in `.codex/IMPLEMENTATION_PLAN.md`.
+`Prepare render` creates a local render job and invokes the C++ engine. The engine isolates the dominant person, applies a configurable outline, composites it over the background, loops a shorter background when needed, and preserves the reference video's audio.
 
-## Run (after Gradle wrapper is added)
+## Run
 
 ```sh
 ./gradlew :desktop-app:run
 ```
 
-Use JDK 21. The installed JDK 26 is newer than the declared project toolchain; installing JDK 21 is required for a reproducible local build.
+Use JDK 21 for reproducible builds. The engine needs FFmpeg, ONNX Runtime, OpenCV, and the local `models/u2net_human_seg.onnx` model. Configure and build it with CMake before the first run:
+
+```sh
+cmake -S render-engine -B render-engine/build
+cmake --build render-engine/build
+ctest --test-dir render-engine/build --output-on-failure
+```
+
+For a direct end-to-end verification without CMake, use:
+
+```sh
+./tests/render-smoke.sh
+```
