@@ -5,6 +5,11 @@ tmp/
 .DS_Store
 *.log
 
+# Local secrets (commit only the safe template)
+.env
+.env.*
+!.env.example
+
 # Project-agent working context (keep only durable docs under version control)
 .codex/*.local.*
 

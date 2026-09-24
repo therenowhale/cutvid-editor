@@ -77,7 +77,7 @@ bool muxReferenceAudio(const std::filesystem::path& silentVideo, const std::file
     const std::filesystem::path ffmpeg = std::filesystem::is_regular_file("/opt/homebrew/opt/ffmpeg/bin/ffmpeg")
         ? "/opt/homebrew/opt/ffmpeg/bin/ffmpeg" : "ffmpeg";
     const std::string command = shellQuote(ffmpeg) + " -y -v error -i " + shellQuote(silentVideo)
-        + " -i " + shellQuote(reference) + " -map 0:v:0 -map 1:a? -c:v copy -c:a aac -shortest " + shellQuote(output);
+        + " -i " + shellQuote(reference) + " -map 0:v:0 -map 1:a:0? -c:v copy -c:a aac -shortest " + shellQuote(output);
     if (std::system(command.c_str()) != 0) {
         error = "FFmpeg could not mux reference audio into the export.";
         return false;
@@ -97,6 +97,19 @@ cv::Rect constrainBox(cv::Rect box, const cv::Size& frameSize) {
     box.width = std::clamp(box.width, 1, frameSize.width - box.x);
     box.height = std::clamp(box.height, 1, frameSize.height - box.y);
     return box;
+}
+
+// `copyTo` treats a mask as a boolean: a value of 1 is as opaque as 255.  That
+// turns an interpolated segmentation edge back into a staircase.  Keep the
+// model's alpha values all the way through the final composite instead.
+void alphaOver(cv::Mat& destination, const cv::Mat& foreground, const cv::Mat& alpha) {
+    CV_Assert(destination.type() == CV_8UC3 && foreground.type() == CV_8UC3);
+    CV_Assert(destination.size() == foreground.size() && alpha.size() == destination.size());
+    cv::Mat foregroundWeight, backgroundWeight, composited;
+    alpha.convertTo(foregroundWeight, CV_32F, 1.0 / 255.0);
+    backgroundWeight = cv::Scalar::all(1.0) - foregroundWeight;
+    cv::blendLinear(foreground, destination, foregroundWeight, backgroundWeight, composited);
+    composited.copyTo(destination);
 }
 
 bool inputExists(const std::string& path) {
@@ -264,14 +277,30 @@ bool render(const std::string& referencePath, const std::string& backgroundPath,
             trackedBox = constrainBox(trackedBox, frame.size());
         } else { trackedBox = detected; hasTracking = true; }
         const cv::Rect box = trackedBox;
-        cv::Mat person = frame(box), personMask = currentMask(box);
+        // Component detection deliberately uses a conservative binary mask, but
+        // it must not become the final matte.  Permit the soft edge immediately
+        // around the selected component and discard soft responses elsewhere.
+        cv::Mat componentSupport;
+        cv::dilate(currentMask, componentSupport, cv::getStructuringElement(cv::MORPH_ELLIPSE, {21,21}));
+        cv::Mat softMask;
+        cv::bitwise_and(mask, componentSupport, softMask);
+
+        cv::Mat person = frame(box), personMask = softMask(box);
         const double scale = std::min(2.0, std::max(0.05, scalePercent / 100.0) * height / person.rows);
-        cv::resize(person, person, {}, scale, scale); cv::resize(personMask, personMask, person.size());
+        cv::resize(person, person, {}, scale, scale, cv::INTER_LANCZOS4);
+        cv::resize(personMask, personMask, person.size(), 0, 0, cv::INTER_LINEAR);
         const int x = std::clamp(width * leftPercent / 100, 0, std::max(0, width - 1));
         const int y = std::clamp(height - person.rows - height * bottomPercent / 100, 0, std::max(0, height - 1)); cv::Rect destination(x, y, std::min(person.cols, width - x), std::min(person.rows, height - y));
         person = person(cv::Rect(0, 0, destination.width, destination.height)); personMask = personMask(cv::Rect(0, 0, destination.width, destination.height));
-        const int outlineSize = std::max(3, outline * 2 + 1); cv::Mat outer, ring; cv::dilate(personMask, outer, cv::getStructuringElement(cv::MORPH_ELLIPSE, {outlineSize, outlineSize})); cv::subtract(outer, personMask, ring);
-        cv::Mat layer = back(destination); layer.setTo(outlineColor, ring); person.copyTo(layer, personMask); writer.write(back);
+        const int outlineSize = std::max(3, outline * 2 + 1);
+        cv::Mat outer, ring;
+        cv::dilate(personMask, outer, cv::getStructuringElement(cv::MORPH_ELLIPSE, {outlineSize, outlineSize}));
+        cv::subtract(outer, personMask, ring);
+        cv::Mat layer = back(destination);
+        cv::Mat outlineLayer(layer.size(), CV_8UC3, outlineColor);
+        alphaOver(layer, outlineLayer, ring);
+        alphaOver(layer, person, personMask);
+        writer.write(back);
         ++index; if (index % 10 == 0) event("progress", "render", 30 + (60 * index / std::max(1,total)), "Rendering outlined cutout frames.");
     }
     writer.release();

@@ -51,6 +51,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.zip.ZipInputStream
 import javax.swing.SwingUtilities
 
 private val videoExtensions = setOf("mov", "mp4", "m4v", "avi", "mkv", "webm")
@@ -368,9 +369,13 @@ private fun launchRenderEngine(reference: File, background: File, settings: Rend
     onStatus(RenderProgress("Starting C++ engine…", 0, true))
     Thread {
         try {
-            val process = ProcessBuilder(engine.absolutePath, jobFile.toString())
+            val processBuilder = ProcessBuilder(engine.absolutePath, jobFile.toString())
                 .redirectErrorStream(true)
-                .start()
+            // ONNX Runtime and OpenBLAS both embed OpenMP on macOS. They are
+            // isolated inside the application bundle, so allow their runtime
+            // initialisation to coexist instead of aborting with exit code 134.
+            processBuilder.environment()["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+            val process = processBuilder.start()
             process.inputStream.bufferedReader().useLines { lines ->
                 lines.forEach { event ->
                     SwingUtilities.invokeLater { onStatus(engineProgress(event)) }
@@ -395,8 +400,8 @@ private fun resolveEngineExecutable(): File? {
     val candidates = buildList {
         if (override != null) add(override)
         System.getProperty("compose.application.resources.dir")?.let { resources ->
-            add(File(resources, "common/jamal-render-engine"))
-            add(File(resources, "jamal-render-engine"))
+            extractPackagedRuntime(File(resources, "common/jamal-runtime.zip"))?.let(::add)
+            extractPackagedRuntime(File(resources, "jamal-runtime.zip"))?.let(::add)
         }
         var directory: File? = launchDirectory
         repeat(4) {
@@ -405,6 +410,36 @@ private fun resolveEngineExecutable(): File? {
         }
     }
     return candidates.firstOrNull { candidate -> candidate.setExecutable(true) && candidate.canExecute() }
+}
+
+private fun extractPackagedRuntime(archive: File): File? {
+    if (!archive.isFile) return null
+    val runtimeDirectory = File(System.getProperty("user.home"), ".jamal/runtime/1.0.3")
+    val engine = File(runtimeDirectory, "jamal-render-engine")
+    if (engine.isFile) return engine
+
+    val temporaryDirectory = File(runtimeDirectory.parentFile, "runtime-extracting")
+    temporaryDirectory.deleteRecursively()
+    temporaryDirectory.mkdirs()
+    ZipInputStream(archive.inputStream().buffered()).use { zip ->
+        while (true) {
+            val entry = zip.nextEntry ?: break
+            val destination = File(temporaryDirectory, entry.name).canonicalFile
+            if (!destination.path.startsWith("${temporaryDirectory.canonicalPath}${File.separator}")) {
+                throw IllegalStateException("Invalid bundled runtime entry")
+            }
+            if (entry.isDirectory) destination.mkdirs() else {
+                destination.parentFile.mkdirs()
+                destination.outputStream().use { output -> zip.copyTo(output) }
+            }
+            zip.closeEntry()
+        }
+    }
+    runtimeDirectory.deleteRecursively()
+    if (!temporaryDirectory.renameTo(runtimeDirectory)) {
+        throw IllegalStateException("Could not install bundled render runtime")
+    }
+    return engine
 }
 
 private fun writeRenderJob(reference: File, background: File, settings: RenderSettings): Path {

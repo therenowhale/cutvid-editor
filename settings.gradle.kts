@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 }
 
 include(":desktop-app")
+include(":web-app")
