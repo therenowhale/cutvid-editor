@@ -27,11 +27,13 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 WORKDIR /app
 COPY --from=build /src/web-app/build/install/web-app /app/web-app
 COPY --from=build /src/render-engine/build/jamal-render-engine /app/render-engine/build/jamal-render-engine
+ARG MODNET_SHA256=5069a5e306b9f5e9f4f2b0360264c9f8ea13b257c7c39943c7cf6a2ec3a102ae
 COPY models/modnet_photographic.onnx /app/models/modnet_photographic.onnx
 COPY docker/start.sh /app/start.sh
 
 RUN chmod +x /app/start.sh /app/render-engine/build/jamal-render-engine \
     && mkdir -p /data/exports \
+    && echo "$MODNET_SHA256  /app/models/modnet_photographic.onnx" | sha256sum -c - \
     && chown -R jamal:jamal /app /data
 
 USER jamal

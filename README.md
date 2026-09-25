@@ -32,8 +32,9 @@ Open http://127.0.0.1:8787. Videos are uploaded only to this machine. Completed 
 ## Docker deployment
 
 The production image builds the web app and native renderer together, includes
-the MODNet model, and writes all user uploads, render history, sessions, and
-exports to a persistent Docker volume.
+the ONNX-simplified MODNet model with its fixed `1×3×1024×576` input, and writes
+all user uploads, render history, sessions, and exports to a persistent Docker
+volume. The image verifies the model checksum during its build.
 
 1. Copy `.env.example` to `.env` and set `GOOGLE_OAUTH_CLIENT_ID`,
    `GOOGLE_OAUTH_CLIENT_SECRET`, and `JAMAL_PUBLIC_URL`.
