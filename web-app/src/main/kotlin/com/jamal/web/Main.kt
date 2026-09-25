@@ -559,10 +559,7 @@ private fun loadPersistedJobs() {
 private fun exportsDirectory(): Path {
     val configured = System.getProperty("jamal.exports.dir")?.takeIf { it.isNotBlank() }?.let(Path::of)
     val home = Path.of(System.getProperty("user.home"))
-    val oneDrive = home.resolve("Library/CloudStorage/OneDrive-Personal")
-    val destination = configured
-        ?: oneDrive.takeIf(Files::isDirectory)?.resolve("Jamal Video Compositor/Exports")
-        ?: home.resolve(".jamal/exports")
+    val destination = configured ?: home.resolve(".jamal/exports")
     return destination.toAbsolutePath().also(Files::createDirectories)
 }
 

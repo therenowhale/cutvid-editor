@@ -27,7 +27,7 @@ cmake --build render-engine/build
 ./gradlew :web-app:run
 ```
 
-Open http://127.0.0.1:8787. Videos are uploaded only to this machine. Completed exports are saved to `OneDrive-Personal/Jamal Video Compositor/Exports` (and offered as browser downloads); temporary uploads remain local in `~/.jamal`.
+Open http://127.0.0.1:8787. Videos are uploaded only to this machine. Completed exports are saved to `~/.jamal/exports` (and offered as browser downloads); temporary uploads remain local in `~/.jamal`.
 
 ## Docker deployment
 
@@ -96,10 +96,10 @@ render-engine output, progress, failures with stack traces, downloads,
 admin authentication failures, and relevant HTTP requests. Tokens and raw MAC
 addresses are never logged; sensitive detail keys are automatically redacted.
 
-To use a different shared folder, such as Dropbox, set `jamal.exports.dir` when starting the app:
+To use a different export folder, set `jamal.exports.dir` when starting the app:
 
 ```sh
-./gradlew -Djamal.exports.dir="$HOME/Dropbox/Jamal Video Compositor/Exports" :web-app:run
+./gradlew -Djamal.exports.dir="/path/to/exports" :web-app:run
 ```
 
 For a direct end-to-end rendering verification, use:
