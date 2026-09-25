@@ -1,0 +1,18 @@
+services:
+  jamal:
+    build: .
+    image: jamal-video-compositor:latest
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    environment:
+      JAMAL_BIND_HOST: 0.0.0.0
+      JAMAL_DATA_DIR: /data
+      JAMAL_EXPORTS_DIR: /data/exports
+    volumes:
+      - jamal-data:/data
+
+volumes:
+  jamal-data:

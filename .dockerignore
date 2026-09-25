@@ -1,0 +1,11 @@
+.git
+.gradle
+**/build
+.idea
+.codex
+.env
+vids
+output
+tmp
+.DS_Store
+models/u2net_human_seg.onnx

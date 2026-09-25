@@ -9,7 +9,6 @@
 #include <sstream>
 #include <cmath>
 
-#include <onnxruntime_cxx_api.h>
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
@@ -128,15 +127,8 @@ bool verifySegmentationModel(const std::filesystem::path& path, std::string& err
         return false;
     }
     try {
-        Ort::Env environment(ORT_LOGGING_LEVEL_WARNING, "jamal-render-engine");
-        Ort::SessionOptions options;
-        options.SetIntraOpNumThreads(2);
-        Ort::Session session(environment, path.c_str(), options);
-        if (session.GetInputCount() == 0 || session.GetOutputCount() == 0) {
-            error = "Human-segmentation model has no usable input or output.";
-            return false;
-        }
-    } catch (const Ort::Exception& exception) {
+        cv::dnn::readNetFromONNX(path.string());
+    } catch (const cv::Exception& exception) {
         error = "Could not load human-segmentation model: " + std::string(exception.what());
         return false;
     }
